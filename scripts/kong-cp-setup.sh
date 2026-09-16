@@ -24,7 +24,18 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."   # docker/scripts/.. -> docker/
 
 # use user stored kpat
-KONNECT_TOKEN=$(cat ~/.kong/kpat)
+#KONNECT_TOKEN=$(cat ~/.kong/kpat)
+
+if [ -n "${KONNECT_TOKEN+x}" ]; then
+    echo "check ~/.kong/kpat file."
+    KONNECT_TOKEN=$(cat ~/.kong/kpat)
+fi
+
+if [ -z "$KONNECT_TOKEN" ]; then
+    echo "configure KONNECT_TOKEN. For example, do > export KONNECT_TOKEN=kpat_...............  "
+    exit 1
+fi
+
 
 CP_NAME="${1:-${KONNECT_KONG_CP_NAME:-event-gateway-demo}}"
 REGION="${KONNECT_REGION:-us}"

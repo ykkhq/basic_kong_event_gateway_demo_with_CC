@@ -1,3 +1,36 @@
+# Kong Event Gateway 簡単なデモ
+
+## 事前準備
+
+### 用意するもの
+- Confluent Cloudのアカウント
+- docker（ローカルPCで動作）
+- konnect アカウント
+
+### 手順
+
+1.Confluent CloudでBasic clusterを作り、Cluster APIKEYとSecretを取得する。
+-> .envに必要な情報を書き込む
+
+2.Konnectのアカウントを作り、Konnectのアクセストークン(kpat)を作成する。
+-> export KONNECT_TOKEN=<kpat_xxxxxxxxxxxxxxxxxxxx> を実行する。
+
+3.setupを実行
+> ./setup.sh 
+
+4.上記完了後以下を実行
+> source .venv/bin/activate
+> python scripts/dashboard_server.py &
+> python scripts/producer.py --region us &
+> python scripts/producer.py --region eu &
+> python scripts/consumer.py --persona analytics &
+> python scripts/consumer.py --persona test &
+> python scripts/consumer.py --persona prod &
+
+5.browserで以下に接続
+http://127.0.0.1:8090
+
+
 # Kong Event Gateway Demo — Multi-Region Orders
 
 Two real Kafka problems, solved at the gateway instead of in application code:
