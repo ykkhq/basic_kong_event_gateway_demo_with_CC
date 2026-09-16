@@ -1,0 +1,17 @@
+# Secrets / generated credentials
+.env
+runtime_config.json
+kong/certs/
+kong/listener-certs/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Editor / OS
+*.swp
+.DS_Store
+
+# Local Claude Code settings
+.claude/

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kong Event Gateway — Orders Demo</title>
+<style>
+  :root{
+    color-scheme: light dark;
+    --bg:#0b0f14; --panel:#121924; --panel-border:#22303f;
+    --text:#e7edf3; --muted:#8ea3b8;
+    --us:#f2994a; --eu:#4a9df2; --kong:#5ee6a6;
+    --test:#c77dff; --prod:#34d399; --skip:#ef5b6b;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:20px 20px 40px}
+  h1{font-size:18px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;font-size:13px}
+  .wrap{max-width:1150px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:14px}
+  .card .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .card .value{font-size:26px;font-weight:600;margin-top:4px}
+  .card.us .value{color:var(--us)} .card.eu .value{color:var(--eu)}
+  .card.test .value{color:var(--test)} .card.prod .value{color:var(--prod)}
+  .card.skip .value{color:var(--skip)} .card.ok .value{color:var(--kong)}
+  .diagram{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:10px;overflow-x:auto}
+  svg{display:block;min-width:960px;width:100%}
+  .node-box{fill:#182233;stroke:var(--panel-border);stroke-width:1}
+  .node-label{fill:var(--text);font-size:12px;font-weight:600}
+  .node-sub{fill:var(--muted);font-size:10px}
+  .kong-box{fill:#10241c;stroke:var(--kong);stroke-width:1.5}
+  .path{fill:none;stroke:#2a3a4d;stroke-width:1.5}
+  .dot{r:4}
+  .dot.us{fill:var(--us)} .dot.eu{fill:var(--eu)}
+  .dot.test{fill:var(--test)} .dot.prod{fill:var(--prod)} .dot.skip{fill:var(--skip)}
+  .log{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:10px 14px;margin-top:20px;max-height:180px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  .log div{padding:2px 0;color:var(--muted)}
+  .log .us{color:var(--us)} .log .eu{color:var(--eu)}
+  .log .test{color:var(--test)} .log .prod{color:var(--prod)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Kong Event Gateway — Multi-Region Orders</h1>
+  <p class="sub">producer→topic routing by identity, plus test/prod traffic isolation via consumer-side skipping</p>
+
+  <div class="cards">
+    <div class="card us"><div class="label">Produced US</div><div class="value" id="c-prod-us">0</div></div>
+    <div class="card eu"><div class="label">Produced EU</div><div class="value" id="c-prod-eu">0</div></div>
+    <div class="card ok"><div class="label">Analytics received (all)</div><div class="value" id="c-analytics">0</div></div>
+    <div class="card test"><div class="label">Test consumer (test only)</div><div class="value" id="c-test">0</div></div>
+    <div class="card prod"><div class="label">Prod consumer (prod only)</div><div class="value" id="c-prodc">0</div></div>
+    <div class="card skip"><div class="label">Skipped for test / prod</div><div class="value" id="c-skip">0 / 0</div></div>
+  </div>
+
+  <div class="diagram">
+    <svg viewBox="0 0 1020 380" id="svg">
+      <!-- producers -->
+      <g><rect class="node-box" x="10" y="40" width="150" height="46" rx="8"/><text class="node-label" x="20" y="60">Producer · US</text><text class="node-sub" x="20" y="76">1 msg / 1-5s</text></g>
+      <g><rect class="node-box" x="10" y="140" width="150" height="46" rx="8"/><text class="node-label" x="20" y="160">Producer · EU</text><text class="node-sub" x="20" y="176">~20% tagged "test"</text></g>
+
+      <!-- kong -->
+      <g><rect class="kong-box" x="230" y="30" width="200" height="200" rx="12"/>
+        <text class="node-label" x="245" y="55" style="fill:#5ee6a6">Kong Event Gateway</text>
+        <text class="node-sub" x="245" y="70">alias "orders" → routes by principal</text>
+        <text class="node-sub" x="245" y="195">skip_record: condition mismatch → drop</text>
+      </g>
+
+      <!-- topics -->
+      <g><rect class="node-box" x="500" y="40" width="130" height="42" rx="8"/><text class="node-label" x="512" y="66">orders.us</text></g>
+      <g><rect class="node-box" x="500" y="140" width="130" height="42" rx="8"/><text class="node-label" x="512" y="166">orders.eu</text></g>
+
+      <!-- consumers -->
+      <g><rect class="node-box" x="790" y="15" width="200" height="46" rx="8"/><text class="node-label" x="802" y="37">Analytics consumer</text><text class="node-sub" x="802" y="52">sees everything</text></g>
+      <g><rect class="node-box" x="790" y="150" width="200" height="46" rx="8"/><text class="node-label" x="802" y="172">Test consumer</text><text class="node-sub" x="802" y="187">condition = test only</text></g>
+      <g><rect class="node-box" x="790" y="285" width="200" height="46" rx="8"/><text class="node-label" x="802" y="307">Prod consumer</text><text class="node-sub" x="802" y="322">condition = prod only</text></g>
+
+      <!-- producer -> kong -->
+      <path class="path" id="p-prod-us" d="M160,63 C200,63 200,63 230,80"/>
+      <path class="path" id="p-prod-eu" d="M160,163 C200,163 200,163 230,180"/>
+      <!-- kong -> topics -->
+      <path class="path" id="p-kong-us" d="M430,80 C465,80 465,61 500,61"/>
+      <path class="path" id="p-kong-eu" d="M430,180 C465,180 465,161 500,161"/>
+      <!-- topics -> analytics (unfiltered) -->
+      <path class="path" id="p-us-analytics" d="M630,61 C720,61 740,38 790,38"/>
+      <path class="path" id="p-eu-analytics" d="M630,161 C720,161 740,40 790,40"/>
+      <!-- topics -> test consumer -->
+      <path class="path" id="p-us-test" d="M630,61 C700,61 740,173 790,173"/>
+      <path class="path" id="p-eu-test" d="M630,161 C700,161 740,173 790,173"/>
+      <!-- topics -> prod consumer -->
+      <path class="path" id="p-us-prod" d="M630,61 C700,90 740,308 790,308"/>
+      <path class="path" id="p-eu-prod" d="M630,161 C700,180 740,308 790,308"/>
+      <!-- skip indicators: a prod-tagged msg dropped before test-consumer, a test-tagged msg dropped before prod-consumer -->
+      <path class="path" id="p-skip-for-test" d="M700,120 C720,140 720,150 705,160"/>
+      <path class="path" id="p-skip-for-prod" d="M700,230 C720,250 720,270 705,280"/>
+
+      <text class="node-sub" x="640" y="228">✕ mismatched condition skipped at each consumer's VC</text>
+    </svg>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const paths = {
+  us_in: $("p-prod-us"), eu_in: $("p-prod-eu"),
+  us_topic: $("p-kong-us"), eu_topic: $("p-kong-eu"),
+  us_analytics: $("p-us-analytics"), eu_analytics: $("p-eu-analytics"),
+  us_test: $("p-us-test"), eu_test: $("p-eu-test"),
+  us_prod: $("p-us-prod"), eu_prod: $("p-eu-prod"),
+  skip_for_test: $("p-skip-for-test"), skip_for_prod: $("p-skip-for-prod"),
+};
+const svg = $("svg");
+
+function fly(path, cls, duration=1100){
+  const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
+  dot.setAttribute("class", "dot " + cls);
+  svg.appendChild(dot);
+  const len = path.getTotalLength();
+  const start = performance.now();
+  function step(now){
+    const t = Math.min((now - start) / duration, 1);
+    const pt = path.getPointAtLength(t * len);
+    dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+    if (t < 1) requestAnimationFrame(step); else dot.remove();
+  }
+  requestAnimationFrame(step);
+}
+
+let lastSeen = 0;
+function logLine(text, cls){
+  const div = document.createElement("div");
+  div.className = cls || "";
+  div.textContent = text;
+  const log = $("log");
+  log.prepend(div);
+  while (log.children.length > 40) log.removeChild(log.lastChild);
+}
+
+async function tick(){
+  try {
+    const res = await fetch("/state");
+    const s = await res.json();
+    $("c-prod-us").textContent = s.produced.us;
+    $("c-prod-eu").textContent = s.produced.eu;
+    $("c-analytics").textContent = s.analytics_total;
+    $("c-test").textContent = s.consumed.test.test;
+    $("c-prodc").textContent = s.consumed.prod.prod;
+    $("c-skip").textContent = `${s.skipped_for_test} / ${s.skipped_for_prod}`;
+    if (s.leaked_to_test > 0 || s.leaked_to_prod > 0) {
+      $("c-skip").style.color = "var(--skip)";
+      $("c-skip").textContent += "  ⚠ LEAK";
+    }
+
+    for (const ev of s.recent){
+      if (ev.ts <= lastSeen) continue;
+      lastSeen = Math.max(lastSeen, ev.ts);
+      const region = (ev.region || "").toLowerCase();
+      const condition = (ev.condition || "").toLowerCase();
+      if (ev.type === "produced"){
+        fly(region === "us" ? paths.us_in : paths.eu_in, region);
+        setTimeout(() => fly(region === "us" ? paths.us_topic : paths.eu_topic, region), 250);
+        logLine(`produced  [${ev.region}/${ev.condition}]  order ${ (ev.order_id||"").slice(0,8) }  $${ev.amount}`, condition);
+        setTimeout(() => {
+          if (condition === "test") fly(paths.skip_for_prod, "skip");
+          else fly(paths.skip_for_test, "skip");
+        }, 550);
+      } else if (ev.type === "consumed"){
+        let target;
+        if (ev.persona === "analytics") target = region === "us" ? paths.us_analytics : paths.eu_analytics;
+        else if (ev.persona === "test") target = region === "us" ? paths.us_test : paths.eu_test;
+        else target = region === "us" ? paths.us_prod : paths.eu_prod;
+        fly(target, ev.persona === "analytics" ? region : condition);
+        logLine(`consumed  [${ev.persona}]  ${ev.region}/${ev.condition}  order ${ (ev.order_id||"").slice(0,8) }`, condition);
+      }
+    }
+  } catch (e) { /* server not up yet */ }
+  setTimeout(tick, 900);
+}
+tick();
+</script>
+</body>
+</html>
