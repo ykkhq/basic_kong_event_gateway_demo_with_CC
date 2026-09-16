@@ -9,7 +9,7 @@
     color-scheme: light dark;
     --bg:#0b0f14; --panel:#121924; --panel-border:#22303f;
     --text:#e7edf3; --muted:#8ea3b8;
-    --us:#f2994a; --eu:#4a9df2; --kong:#5ee6a6;
+    --us:#f2994a; --eu:#4a9df2; --kong:#5ee6a6; --kafka:#4a9df2;
     --test:#c77dff; --prod:#34d399; --skip:#ef5b6b;
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -27,15 +27,29 @@
   .card.test .value{color:var(--test)} .card.prod .value{color:var(--prod)}
   .card.skip .value{color:var(--skip)} .card.ok .value{color:var(--kong)}
   .diagram{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:10px;overflow-x:auto}
-  svg{display:block;min-width:960px;width:100%}
+  svg{display:block;min-width:980px;width:100%}
   .node-box{fill:#182233;stroke:var(--panel-border);stroke-width:1}
   .node-label{fill:var(--text);font-size:12px;font-weight:600}
   .node-sub{fill:var(--muted);font-size:10px}
   .kong-box{fill:#10241c;stroke:var(--kong);stroke-width:1.5}
+  .kafka-box{fill:#0f1c2b;stroke:var(--kafka);stroke-width:1.5}
+  .vc-box{fill:#182b22;stroke:var(--kong);stroke-width:1}
+  .topic-box{fill:#182233;stroke:var(--kafka);stroke-width:1}
   .path{fill:none;stroke:#2a3a4d;stroke-width:1.5}
   .dot{r:4}
   .dot.us{fill:var(--us)} .dot.eu{fill:var(--eu)}
   .dot.test{fill:var(--test)} .dot.prod{fill:var(--prod)} .dot.skip{fill:var(--skip)}
+  .flash{animation:flashPulse 650ms ease-out}
+  @keyframes flashPulse{
+    0%{filter:brightness(2.1) saturate(1.6) drop-shadow(0 0 10px #ffb454);}
+    100%{filter:brightness(1) saturate(1) drop-shadow(0 0 0px transparent);}
+  }
+  .flash-skip{animation:flashPulseSkip 650ms ease-out}
+  @keyframes flashPulseSkip{
+    0%{filter:brightness(2.1) saturate(1.8) drop-shadow(0 0 10px #ef5b6b);}
+    100%{filter:brightness(1) saturate(1) drop-shadow(0 0 0px transparent);}
+  }
+  .skip-label{fill:var(--skip);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;transition:opacity 200ms ease}
   .log{background:var(--panel);border:1px solid var(--panel-border);border-radius:10px;padding:10px 14px;margin-top:20px;max-height:180px;overflow-y:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
   .log div{padding:2px 0;color:var(--muted)}
   .log .us{color:var(--us)} .log .eu{color:var(--eu)}
@@ -45,7 +59,7 @@
 <body>
 <div class="wrap">
   <h1>Kong Event Gateway — Multi-Region Orders</h1>
-  <p class="sub">producer→topic routing by identity, plus test/prod traffic isolation via consumer-side skipping</p>
+  <p class="sub">every client — producer or consumer — talks only to Kong Event Gateway; Kafka sits behind it</p>
 
   <div class="cards">
     <div class="card us"><div class="label">Produced US</div><div class="value" id="c-prod-us">0</div></div>
@@ -57,47 +71,62 @@
   </div>
 
   <div class="diagram">
-    <svg viewBox="0 0 1020 380" id="svg">
-      <!-- producers -->
-      <g><rect class="node-box" x="10" y="40" width="150" height="46" rx="8"/><text class="node-label" x="20" y="60">Producer · US</text><text class="node-sub" x="20" y="76">1 msg / 1-5s</text></g>
-      <g><rect class="node-box" x="10" y="140" width="150" height="46" rx="8"/><text class="node-label" x="20" y="160">Producer · EU</text><text class="node-sub" x="20" y="176">~20% tagged "test"</text></g>
+    <svg viewBox="0 0 1000 460" id="svg">
+      <!-- producers (left) -->
+      <g><rect id="box-in-us" class="node-box" x="15" y="30" width="175" height="48" rx="8"/><text class="node-label" x="27" y="50">Producer · US</text><text class="node-sub" x="27" y="66">1 msg / 1-5s</text></g>
+      <g><rect id="box-in-eu" class="node-box" x="15" y="100" width="175" height="48" rx="8"/><text class="node-label" x="27" y="120">Producer · EU</text><text class="node-sub" x="27" y="136">~20% tagged "test"</text></g>
 
-      <!-- kong -->
-      <g><rect class="kong-box" x="230" y="30" width="200" height="200" rx="12"/>
-        <text class="node-label" x="245" y="55" style="fill:#5ee6a6">Kong Event Gateway</text>
-        <text class="node-sub" x="245" y="70">alias "orders" → routes by principal</text>
-        <text class="node-sub" x="245" y="195">skip_record: condition mismatch → drop</text>
+      <!-- consumers (right) -->
+      <g><rect id="box-analytics" class="node-box" x="810" y="20" width="175" height="48" rx="8"/><text class="node-label" x="822" y="40">Analytics consumer</text><text class="node-sub" x="822" y="56">sees everything</text></g>
+      <g><rect id="box-test" class="node-box" x="810" y="90" width="175" height="48" rx="8"/><text class="node-label" x="822" y="110">Test consumer</text><text class="node-sub" x="822" y="126">condition = test</text></g>
+      <g><rect id="box-prod" class="node-box" x="810" y="160" width="175" height="48" rx="8"/><text class="node-label" x="822" y="180">Prod consumer</text><text class="node-sub" x="822" y="196">condition = prod</text></g>
+
+      <!-- Kong Event Gateway: on top, virtual clusters live inside it -->
+      <g>
+        <rect class="kong-box" x="250" y="15" width="500" height="150" rx="12"/>
+        <text class="node-label" x="270" y="35" style="fill:#5ee6a6;font-size:13px">Kong Event Gateway</text>
+        <rect id="box-vc-orders" class="vc-box" x="265" y="55" width="150" height="95" rx="8"/>
+        <text class="node-label" x="278" y="80">orders-vc</text>
+        <text class="node-sub" x="278" y="98">alias "orders" routed</text>
+        <text class="node-sub" x="278" y="112">by principal</text>
+        <rect id="box-vc-test" class="vc-box" x="425" y="55" width="140" height="95" rx="8"/>
+        <text class="node-label" x="450" y="80">test-vc</text>
+        <text class="node-sub" x="438" y="98">skip_record:</text>
+        <text class="node-sub" x="438" y="112">condition != test</text>
+        <text id="lbl-skip-test" class="skip-label" x="495" y="143" text-anchor="middle" opacity="0">skipped</text>
+        <rect id="box-vc-prod" class="vc-box" x="575" y="55" width="155" height="95" rx="8"/>
+        <text class="node-label" x="608" y="80">prod-vc</text>
+        <text class="node-sub" x="588" y="98">skip_record:</text>
+        <text class="node-sub" x="588" y="112">condition != prod</text>
+        <text id="lbl-skip-prod" class="skip-label" x="653" y="143" text-anchor="middle" opacity="0">skipped</text>
       </g>
 
-      <!-- topics -->
-      <g><rect class="node-box" x="500" y="40" width="130" height="42" rx="8"/><text class="node-label" x="512" y="66">orders.us</text></g>
-      <g><rect class="node-box" x="500" y="140" width="130" height="42" rx="8"/><text class="node-label" x="512" y="166">orders.eu</text></g>
+      <!-- Kafka: beneath Kong, topics live inside it -->
+      <g>
+        <rect class="kafka-box" x="250" y="210" width="500" height="150" rx="12"/>
+        <text class="node-label" x="270" y="232" style="fill:#4a9df2;font-size:13px">Kafka · Confluent Cloud</text>
+        <rect id="box-topic-us" class="topic-box" x="290" y="250" width="190" height="90" rx="8"/>
+        <text class="node-label" x="305" y="285">orders.us</text>
+        <rect id="box-topic-eu" class="topic-box" x="520" y="250" width="190" height="90" rx="8"/>
+        <text class="node-label" x="535" y="285">orders.eu</text>
+      </g>
 
-      <!-- consumers -->
-      <g><rect class="node-box" x="790" y="15" width="200" height="46" rx="8"/><text class="node-label" x="802" y="37">Analytics consumer</text><text class="node-sub" x="802" y="52">sees everything</text></g>
-      <g><rect class="node-box" x="790" y="150" width="200" height="46" rx="8"/><text class="node-label" x="802" y="172">Test consumer</text><text class="node-sub" x="802" y="187">condition = test only</text></g>
-      <g><rect class="node-box" x="790" y="285" width="200" height="46" rx="8"/><text class="node-label" x="802" y="307">Prod consumer</text><text class="node-sub" x="802" y="322">condition = prod only</text></g>
+      <!-- clients -> virtual clusters -->
+      <path class="path" id="p-in-analytics" d="M810,44 C900,0 350,0 400,55"/>
+      <path class="path" id="p-in-us" d="M190,54 C220,54 240,80 265,80"/>
+      <path class="path" id="p-in-eu" d="M190,124 C220,124 240,120 265,120"/>
+      <path class="path" id="p-in-test" d="M810,114 C700,114 650,90 565,90"/>
+      <path class="path" id="p-in-prod" d="M810,184 C770,184 750,120 730,120"/>
 
-      <!-- producer -> kong -->
-      <path class="path" id="p-prod-us" d="M160,63 C200,63 200,63 230,80"/>
-      <path class="path" id="p-prod-eu" d="M160,163 C200,163 200,163 230,180"/>
-      <!-- kong -> topics -->
-      <path class="path" id="p-kong-us" d="M430,80 C465,80 465,61 500,61"/>
-      <path class="path" id="p-kong-eu" d="M430,180 C465,180 465,161 500,161"/>
-      <!-- topics -> analytics (unfiltered) -->
-      <path class="path" id="p-us-analytics" d="M630,61 C720,61 740,38 790,38"/>
-      <path class="path" id="p-eu-analytics" d="M630,161 C720,161 740,40 790,40"/>
-      <!-- topics -> test consumer -->
-      <path class="path" id="p-us-test" d="M630,61 C700,61 740,173 790,173"/>
-      <path class="path" id="p-eu-test" d="M630,161 C700,161 740,173 790,173"/>
-      <!-- topics -> prod consumer -->
-      <path class="path" id="p-us-prod" d="M630,61 C700,90 740,308 790,308"/>
-      <path class="path" id="p-eu-prod" d="M630,161 C700,180 740,308 790,308"/>
-      <!-- skip indicators: a prod-tagged msg dropped before test-consumer, a test-tagged msg dropped before prod-consumer -->
-      <path class="path" id="p-skip-for-test" d="M700,120 C720,140 720,150 705,160"/>
-      <path class="path" id="p-skip-for-prod" d="M700,230 C720,250 720,270 705,280"/>
-
-      <text class="node-sub" x="640" y="228">✕ mismatched condition skipped at each consumer's VC</text>
+      <!-- virtual clusters -> topics: one line per produce, one per consume -->
+      <path class="path" id="p-produce-us" d="M300,150 C300,180 320,220 320,250"/>
+      <path class="path" id="p-produce-eu" d="M380,150 C380,180 540,220 540,250"/>
+      <path class="path" id="p-consume-analytics-us" d="M330,150 C330,180 360,220 360,250"/>
+      <path class="path" id="p-consume-analytics-eu" d="M400,150 C400,180 580,220 580,250"/>
+      <path class="path" id="p-consume-test-us" d="M460,150 C460,180 410,220 410,250"/>
+      <path class="path" id="p-consume-test-eu" d="M520,150 C520,180 630,220 630,250"/>
+      <path class="path" id="p-consume-prod-us" d="M590,150 C590,180 450,220 450,250"/>
+      <path class="path" id="p-consume-prod-eu" d="M680,150 C680,180 680,220 680,250"/>
     </svg>
   </div>
 
@@ -107,29 +136,60 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const paths = {
-  us_in: $("p-prod-us"), eu_in: $("p-prod-eu"),
-  us_topic: $("p-kong-us"), eu_topic: $("p-kong-eu"),
-  us_analytics: $("p-us-analytics"), eu_analytics: $("p-eu-analytics"),
-  us_test: $("p-us-test"), eu_test: $("p-eu-test"),
-  us_prod: $("p-us-prod"), eu_prod: $("p-eu-prod"),
-  skip_for_test: $("p-skip-for-test"), skip_for_prod: $("p-skip-for-prod"),
+  in_us: $("p-in-us"), in_eu: $("p-in-eu"),
+  in_analytics: $("p-in-analytics"), in_test: $("p-in-test"), in_prod: $("p-in-prod"),
+  produce_us: $("p-produce-us"), produce_eu: $("p-produce-eu"),
+  consume_analytics_us: $("p-consume-analytics-us"), consume_analytics_eu: $("p-consume-analytics-eu"),
+  consume_test_us: $("p-consume-test-us"), consume_test_eu: $("p-consume-test-eu"),
+  consume_prod_us: $("p-consume-prod-us"), consume_prod_eu: $("p-consume-prod-eu"),
 };
 const svg = $("svg");
 
-function fly(path, cls, duration=1100){
-  const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
-  dot.setAttribute("class", "dot " + cls);
-  svg.appendChild(dot);
-  const len = path.getTotalLength();
-  const start = performance.now();
-  function step(now){
-    const t = Math.min((now - start) / duration, 1);
-    const pt = path.getPointAtLength(t * len);
-    dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
-    if (t < 1) requestAnimationFrame(step); else dot.remove();
-  }
-  requestAnimationFrame(step);
+function flash(id, cls="flash"){
+  const el = $(id);
+  if (!el) return;
+  el.classList.remove("flash", "flash-skip");
+  void el.getBBox();
+  el.classList.add(cls);
 }
+
+function showSkipLabel(id){
+  const el = $(id);
+  if (!el) return;
+  el.setAttribute("opacity", "1");
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(() => el.setAttribute("opacity", "0"), 700);
+}
+
+function fly(path, cls, duration=1100, reverse=false){
+  return new Promise((resolve) => {
+    const dot = document.createElementNS("http://www.w3.org/2000/svg","circle");
+    dot.setAttribute("class", "dot " + cls);
+    svg.appendChild(dot);
+    const len = path.getTotalLength();
+    const start = performance.now();
+    function step(now){
+      const raw = Math.min((now - start) / duration, 1);
+      const t = reverse ? 1 - raw : raw;
+      const pt = path.getPointAtLength(t * len);
+      dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+      if (raw < 1) requestAnimationFrame(step); else { dot.remove(); resolve(); }
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+// Animations are queued and run one at a time, so dots move sequentially
+// across the diagram instead of several overlapping mid-flight.
+const animQueue = [];
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+async function runQueue(){
+  while (true){
+    if (animQueue.length === 0){ await wait(60); continue; }
+    await animQueue.shift()();
+  }
+}
+runQueue();
 
 let lastSeen = 0;
 function logLine(text, cls){
@@ -162,19 +222,38 @@ async function tick(){
       const region = (ev.region || "").toLowerCase();
       const condition = (ev.condition || "").toLowerCase();
       if (ev.type === "produced"){
-        fly(region === "us" ? paths.us_in : paths.eu_in, region);
-        setTimeout(() => fly(region === "us" ? paths.us_topic : paths.eu_topic, region), 250);
+        animQueue.push(async () => {
+          // client -> orders-vc
+          await fly(region === "us" ? paths.in_us : paths.in_eu, region);
+          flash("box-vc-orders");
+          // orders-vc -> the physical topic it routed to
+          await fly(region === "us" ? paths.produce_us : paths.produce_eu, region, 900);
+          flash(region === "us" ? "box-topic-us" : "box-topic-eu");
+
+          // the "other" virtual cluster also reads this record from the topic,
+          // then its skip_record policy drops it before it reaches that consumer
+          const skipVc = condition === "test" ? "prod" : "test";
+          const skipPath = paths["consume_" + skipVc + "_" + region];
+          if (skipPath) {
+            await fly(skipPath, "skip", 900, true);
+            flash("box-vc-" + skipVc, "flash-skip");
+            showSkipLabel("lbl-skip-" + skipVc);
+          }
+        });
         logLine(`produced  [${ev.region}/${ev.condition}]  order ${ (ev.order_id||"").slice(0,8) }  $${ev.amount}`, condition);
-        setTimeout(() => {
-          if (condition === "test") fly(paths.skip_for_prod, "skip");
-          else fly(paths.skip_for_test, "skip");
-        }, 550);
       } else if (ev.type === "consumed"){
-        let target;
-        if (ev.persona === "analytics") target = region === "us" ? paths.us_analytics : paths.eu_analytics;
-        else if (ev.persona === "test") target = region === "us" ? paths.us_test : paths.eu_test;
-        else target = region === "us" ? paths.us_prod : paths.eu_prod;
-        fly(target, ev.persona === "analytics" ? region : condition);
+        animQueue.push(async () => {
+          // topic -> the consuming virtual cluster (reverse = travels from topic up to VC)
+          const consumeKey = "consume_" + ev.persona + "_" + region;
+          if (paths[consumeKey]) await fly(paths[consumeKey], ev.persona === "analytics" ? region : condition, 900, true);
+          flash(ev.persona === "analytics" ? "box-vc-orders" : ev.persona === "test" ? "box-vc-test" : "box-vc-prod");
+          // virtual cluster -> client (reverse of the client-in path)
+          const clientPath = ev.persona === "analytics" ? paths.in_analytics
+                            : ev.persona === "test" ? paths.in_test
+                            : paths.in_prod;
+          await fly(clientPath, ev.persona === "analytics" ? region : condition, 1100, true);
+          flash(ev.persona === "analytics" ? "box-analytics" : ev.persona === "test" ? "box-test" : "box-prod");
+        });
         logLine(`consumed  [${ev.persona}]  ${ev.region}/${ev.condition}  order ${ (ev.order_id||"").slice(0,8) }`, condition);
       }
     }

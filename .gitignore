@@ -3,6 +3,7 @@
 runtime_config.json
 kong/certs/
 kong/listener-certs/
+kong/dp-certs/
 
 # Python
 .venv/

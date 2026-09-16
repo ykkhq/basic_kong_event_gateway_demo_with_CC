@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Idempotently configure the Kong Event Gateway for the multi-region orders demo.
 
-Targets the Event Gateway created by the official quickstart script
-(`curl -Ls https://get.konghq.com/event-gateway | bash -s -- -k <PAT> -n orders-demo-event-gateway`).
+Creates the Event Gateway itself if it doesn't exist yet (unlike Kong's own
+quickstart script, this never deletes/recreates an existing one), a Konnect
+DP client certificate (kept in kong/dp-certs/, reused across runs) and makes
+sure the local Docker data-plane container is running against it — this is
+what died after a colima/docker restart and needs restarting here, not on
+Konnect's side.
 
 Creates:
   - 1 backend cluster -> the user's Confluent Cloud Kafka cluster
@@ -49,6 +53,9 @@ TOPIC_US = "orders.us"
 TOPIC_EU = "orders.eu"
 GATEWAY_PORT = 19092
 CERT_DIR = ROOT / "kong" / "listener-certs"
+DP_CERT_DIR = ROOT / "kong" / "dp-certs"
+DP_CONTAINER_NAME = "orders-event-gateway-dp"
+DP_IMAGE = "kong/kong-event-gateway:latest"
 
 
 def kpat() -> str:
@@ -80,14 +87,66 @@ def find_one(items: list, **match):
     return None
 
 
-def get_event_gateway_id() -> str:
+def get_or_create_event_gateway_id() -> str:
     data = [gw for gw in api("GET", "/event-gateways")["data"] if gw["name"] == EVENT_GATEWAY_NAME]
-    if not data:
-        sys.exit(
-            f"Event Gateway '{EVENT_GATEWAY_NAME}' not found. Run the quickstart script first:\n"
-            f"  curl -Ls https://get.konghq.com/event-gateway | bash -s -- -k \"$(cat ~/.kong/kpat)\" -n {EVENT_GATEWAY_NAME}"
+    if data:
+        return data[0]["id"]
+    created = api(
+        "POST",
+        "/event-gateways",
+        json={"name": EVENT_GATEWAY_NAME, "description": "Multi-region orders demo", "min_runtime_version": "1.2"},
+    )
+    print(f"Event Gateway created: {EVENT_GATEWAY_NAME} ({created['id']})")
+    return created["id"]
+
+
+def ensure_dp_certificate(gw_id: str) -> tuple[str, str]:
+    DP_CERT_DIR.mkdir(parents=True, exist_ok=True)
+    cert_path, key_path = DP_CERT_DIR / "tls.crt", DP_CERT_DIR / "key.crt"
+    if not (cert_path.exists() and key_path.exists()):
+        subprocess.run(
+            [
+                "openssl", "req", "-new", "-x509", "-nodes", "-newkey", "rsa:2048",
+                "-keyout", str(key_path), "-out", str(cert_path),
+                "-days", "3650", "-subj", f"/CN={EVENT_GATEWAY_NAME}-dp",
+            ],
+            check=True, capture_output=True,
         )
-    return data[0]["id"]
+        print(f"generated Konnect data-plane client cert: {cert_path}")
+        api(
+            "POST",
+            f"/event-gateways/{gw_id}/data-plane-certificates",
+            json={"certificate": cert_path.read_text(), "name": f"{EVENT_GATEWAY_NAME}-dp-cert"},
+        )
+        print("registered data-plane client cert with Konnect")
+    return cert_path.read_text(), key_path.read_text()
+
+
+def ensure_data_plane_running(gw_id: str) -> None:
+    running = subprocess.run(
+        ["docker", "ps", "--filter", f"name={DP_CONTAINER_NAME}", "--format", "{{.Names}}"],
+        capture_output=True, text=True,
+    ).stdout
+    if DP_CONTAINER_NAME in running.split():
+        print(f"data-plane container already running: {DP_CONTAINER_NAME}")
+        return
+
+    cert, key = ensure_dp_certificate(gw_id)
+    subprocess.run(["docker", "rm", "-f", DP_CONTAINER_NAME], capture_output=True)
+    subprocess.run(
+        [
+            "docker", "run", "--rm", "-d", "--name", DP_CONTAINER_NAME,
+            "-e", "KONG_KONNECT_REGION=" + KONNECT_REGION,
+            "-e", "KONG_KONNECT_DOMAIN=konghq.com",
+            "-e", f"KONG_KONNECT_GATEWAY_CLUSTER_ID={gw_id}",
+            "-e", f"KONG_KONNECT_CLIENT_CERT={cert}",
+            "-e", f"KONG_KONNECT_CLIENT_KEY={key}",
+            "-p", f"{GATEWAY_PORT}-{GATEWAY_PORT + 9}:{GATEWAY_PORT}-{GATEWAY_PORT + 9}",
+            DP_IMAGE,
+        ],
+        check=True,
+    )
+    print(f"started data-plane container: {DP_CONTAINER_NAME} (image {DP_IMAGE})")
 
 
 def ensure_backend_cluster(gw_id: str) -> str:
@@ -252,8 +311,10 @@ def ensure_skip_record_policy(gw_id: str, vc_id: str, name: str, description: st
 
 
 def main():
-    gw_id = get_event_gateway_id()
+    gw_id = get_or_create_event_gateway_id()
     print(f"Event Gateway: {EVENT_GATEWAY_NAME} ({gw_id})")
+
+    ensure_data_plane_running(gw_id)
 
     backend_id = ensure_backend_cluster(gw_id)
     listener_id = ensure_listener(gw_id)

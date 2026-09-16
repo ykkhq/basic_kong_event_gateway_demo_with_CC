@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs the full initial setup for the orders demo: venv + deps, Confluent
-# Cloud topics, then Konnect Event Gateway config (backend cluster, listeners,
-# virtual clusters, routing, ACLs, skip_record policy). Idempotent — safe to
-# re-run.
+# Cloud topics, then Konnect Event Gateway config (creates the gateway itself
+# if needed, starts/restarts the local Docker data-plane, backend cluster,
+# listener, virtual clusters, routing, ACLs, skip_record policies). Idempotent
+# — safe to re-run any time, including after a colima/docker restart.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -28,5 +29,6 @@ echo "  python scripts/dashboard_server.py &"
 echo "  python scripts/producer.py --region us &"
 echo "  python scripts/producer.py --region eu &"
 echo "  python scripts/consumer.py --persona analytics &"
-echo "  python scripts/consumer.py --persona audit &"
+echo "  python scripts/consumer.py --persona test &"
+echo "  python scripts/consumer.py --persona prod &"
 echo "  open http://127.0.0.1:8090"
