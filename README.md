@@ -30,6 +30,7 @@
 5.browserで以下に接続
 http://127.0.0.1:8090
 
+![description](image/image1.png)
 
 # Kong Event Gateway Demo — Multi-Region Orders
 
