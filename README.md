@@ -30,7 +30,7 @@ flowchart LR
 
     subgraph KEG[Kong Event Gateway]
         direction LR
-        VC1[virtual cluster: orders-vc<br/>alias "orders" routed by principal]
+        VC1[virtual cluster: orders-vc<br/>alias orders routed by principal]
         VC2[virtual cluster: test-vc<br/>skip_record: condition != test]
         VC3[virtual cluster: prod-vc<br/>skip_record: condition != prod]
     end
