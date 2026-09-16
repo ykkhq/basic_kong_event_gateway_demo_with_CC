@@ -83,42 +83,48 @@ flowchart LR
     TUS -. Confluent Cloud .- TEU
 ```
 
-A live version of this diagram, with messages animating across it and running
-counters (produced / delivered / skipped), is served by `scripts/dashboard_server.py`.
+A live version of this diagram is served by `scripts/dashboard_server.py`:
+Kong sits on top, Kafka (with its topics) sits beneath it, every client line
+terminates at Kong — never at Kafka directly — and each virtual cluster is
+drawn as its own box inside Kong. Dots travel client → virtual cluster →
+topic (and back) one at a time, flashing the box they land on; a record a
+virtual cluster's `skip_record` policy drops animates as a red dot from the
+topic to that virtual cluster, flashes it red, and shows "skipped" briefly
+at the bottom of that box.
 
 ## Backend
 
 - Kafka: an existing Confluent Cloud cluster (bring your own — fill in `.env`).
-- Event Gateway: Konnect-managed control plane + a local Docker data plane,
-  provisioned with Kong's own quickstart:
-  ```
-  curl -Ls https://get.konghq.com/event-gateway | bash -s -- -k "$(cat ~/.kong/kpat)" -n orders-demo-event-gateway
-  ```
+- Event Gateway: a Konnect-managed control plane + a local Docker data plane.
+  `scripts/setup_konnect.py` (called by `setup.sh`) creates the Event Gateway
+  itself if it doesn't exist yet, generates/reuses a Konnect data-plane
+  client certificate in `kong/dp-certs/`, and starts the
+  `orders-event-gateway-dp` container if it isn't already running. This is
+  idempotent and safe to re-run any time — in particular after a
+  `colima`/Docker restart, which kills the container (it does not survive a
+  VM restart) without touching anything already configured in Konnect.
 
-> Note: this directory also contains `scripts/kong-cp-setup.sh`, `kong/certs/`,
-> and a classic-Gateway control plane also named `event-gateway-demo` — those
-> are leftovers from an unrelated demo and are not used by anything here.
+> Note: this directory also contains `scripts/kong-cp-setup.sh` and
+> `kong/certs/` — leftovers from an unrelated demo, not used by anything
+> here. `kong/dp-certs/` (Konnect data-plane client cert) and
+> `kong/listener-certs/` (the demo listener's self-signed TLS cert) are ours,
+> generated on first run, and gitignored.
 
 ## Running it
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+./setup.sh
+```
 
-# 1. fill in .env: BOOTSTRAP_SERVERS, KAFKA_API_KEY, KAFKA_API_SECRET (Confluent Cloud)
+This creates the venv, installs dependencies, creates the two Confluent
+Cloud topics, and fully configures the Event Gateway (creating it and its
+data-plane container if needed). Re-running it is always safe. Then:
 
-# 2. create the two backend topics (idempotent)
-python scripts/create_confluent_topics.py
-
-# 3. configure the Event Gateway: backend cluster, listener, virtual clusters,
-#    topic routing, ACLs, and both skip_record policies (idempotent)
-python scripts/setup_konnect.py
-
-# 4. start the dashboard
+```bash
+source .venv/bin/activate
 python scripts/dashboard_server.py &
 open http://127.0.0.1:8090
 
-# 5. start producers and consumers
 python scripts/producer.py --region us &
 python scripts/producer.py --region eu &
 python scripts/consumer.py --persona analytics &
@@ -132,6 +138,15 @@ consumer's only on `condition=prod` orders — each is exactly one skip counter
 behind the other's total. "Leaked" stays at 0/0 the whole time, proving
 neither consumer ever receives the other's data, even though both subscribe
 to the same two topics.
+
+When you're done, stop all producers/consumers with:
+
+```bash
+./cleanup.sh
+```
+
+(the dashboard server and the Event Gateway data-plane container are left
+running — `docker rm -f orders-event-gateway-dp` if you want to stop that too)
 
 ## Verifying the routing independently
 
